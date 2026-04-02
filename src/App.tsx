@@ -270,43 +270,48 @@ const App = () => {
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {cart.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4">
-                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center">
-                      <ShoppingBag className="w-10 h-10" />
-                    </div>
-                    <p className="font-medium">購物車是空的</p>
-                  </div>
-                ) : (
-                  cart.map((item) => (
-                    <div key={item.id} className="flex items-center gap-4">
-                      <img
-                        src={item.image}
-                        alt={item.name}
-                        className="w-16 h-16 rounded-xl object-cover border border-slate-100"
-                      />
-                      <div className="flex-1">
-                        <h4 className="font-bold text-slate-800">{item.name}</h4>
-                        <p className="text-slate-500 text-sm">${item.price}</p>
-                      </div>
-                      <div className="flex items-center gap-3 bg-slate-50 rounded-lg p-1 px-2">
-                        <button
-                          onClick={() => updateQuantity(item.id, -1)}
-                          className="p-1"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <span className="font-bold">{item.quantity}</span>
-                        <button
-                          onClick={() => updateQuantity(item.id, 1)}
-                          className="p-1"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
+                {cartItemCount === 0 ? (
+  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4">
+    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center">
+      <ShoppingBag className="w-10 h-10" />
+    </div>
+    <p className="font-medium">購物車是空的</p>
+  </div>
+) : (
+  <div className="space-y-4">
+    {cart.map((item) => (
+      <div
+        key={item.id}
+        className="flex items-center gap-4 rounded-2xl border border-slate-100 p-3"
+      >
+        <img
+          src={item.image}
+          alt={item.name}
+          className="w-16 h-16 rounded-xl object-cover border border-slate-100 shrink-0"
+        />
+        <div className="flex-1 min-w-0">
+          <h4 className="font-bold text-slate-800 truncate">{item.name}</h4>
+          <p className="text-slate-500 text-sm">${item.price}</p>
+        </div>
+        <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-1 px-2 shrink-0">
+          <button
+            onClick={() => updateQuantity(item.id, -1)}
+            className="p-1"
+          >
+            <Minus className="w-4 h-4" />
+          </button>
+          <span className="font-bold min-w-[20px] text-center">{item.quantity}</span>
+          <button
+            onClick={() => updateQuantity(item.id, 1)}
+            className="p-1"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    ))}
+  </div>
+)}
               </div>
 
               {cart.length > 0 && (
