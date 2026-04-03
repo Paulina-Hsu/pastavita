@@ -6,8 +6,6 @@ import {
   X,
   CheckCircle2,
   Utensils,
-  Clock,
-  MapPin,
 } from 'lucide-react';
 
 // 菜單資料定義
@@ -36,11 +34,10 @@ const App = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [orderStatus, setOrderStatus] = useState<OrderStatus>(null);
   
-  // 訂單相關狀態
   const [orderType, setOrderType] = useState<OrderType>('外帶');
   const [tableNumber, setTableNumber] = useState('');
-  const [nickname, setNickname] = useState('');      // 內用時使用
-  const [phoneLast3, setPhoneLast3] = useState('');  // 外帶時使用
+  const [nickname, setNickname] = useState('');
+  const [phoneLast3, setPhoneLast3] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('現金');
 
   const filteredMenu = useMemo(() => {
@@ -74,7 +71,6 @@ const App = () => {
   const handleCheckout = async () => {
     if (cart.length === 0) return alert('請先選擇商品');
 
-    // 檢查必填欄位
     if (orderType === '內用') {
       if (!nickname.trim()) return alert('請輸入您的暱稱喔！');
       if (!tableNumber.trim()) return alert('請輸入桌號喔！');
@@ -84,9 +80,7 @@ const App = () => {
 
     try {
       setOrderStatus('submitting');
-
       const payload = {
-        // 根據訂單類型，決定傳給 Google Sheet "姓名" 欄位的內容
         customerName: orderType === '內用' ? nickname : `手機末3碼:${phoneLast3}`,
         phone: '', 
         orderType: orderType,
@@ -229,7 +223,7 @@ const App = () => {
                 <div className="flex justify-between items-center text-slate-900 font-bold text-xl pt-2">
                   <span>總計</span><span className="text-amber-600">${totalAmount}</span>
                 </div>
-                <button onClick={handleCheckout} className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold shadow-lg hover:bg-amber-700">確認下單</button>
+                <button onClick={handleCheckout} className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold shadow-lg">確認下單</button>
               </div>
             )}
           </div>
