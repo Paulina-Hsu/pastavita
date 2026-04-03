@@ -94,12 +94,17 @@ type CartItem = MenuItem & {
 };
 
 type OrderStatus = 'submitting' | 'success' | null;
+type OrderType = '外帶' | '內用';
 
 const App = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState('全部');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [orderStatus, setOrderStatus] = useState<OrderStatus>(null);
+  
+  // 新增：控制「內用/外帶」與「桌號」的狀態
+  const [orderType, setOrderType] = useState<OrderType>('外帶');
+  const [tableNumber, setTableNumber] = useState('');
 
   const filteredMenu = useMemo(() => {
     return activeCategory === '全部'
@@ -139,12 +144,56 @@ const App = () => {
   );
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const handleCheckout = () => {
-    setOrderStatus('submitting');
-    setTimeout(() => {
+  const handleCheckout = async () => {
+    try {
+      if (cart.length === 0) {
+        alert('請先選擇商品');
+        return;
+      }
+
+      // 新增防呆機制：如果選內用，強迫一定要填桌號
+      if (orderType === '內用' && tableNumber.trim() === '') {
+        alert('您選擇了「內用」，請輸入桌號喔！');
+        return;
+      }
+
+      setOrderStatus('submitting');
+
+      // 將最新的點餐方式與桌號放入 payload 中
+      const payload = {
+        customerName: '現場顧客', // 之後若有需要可以再加輸入框
+        phone: '',
+        orderType: orderType,
+        tableNumber: orderType === '內用' ? tableNumber : '', // 外帶就清空桌號
+        note: '',
+        items: cart,
+        totalAmount,
+      };
+
+      await fetch(
+        'https://script.google.com/macros/s/AKfycbyGagsxQXBYsWPo12cyERBN72RhMk6Ca7YZCJVTJhNk4lYFjoRbLQMdjAXB2MSacfCTwA/exec',
+        {
+          method: 'POST',
+          mode: 'no-cors',
+          cache: 'no-cache',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8',
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
       setOrderStatus('success');
       setCart([]);
-    }, 1500);
+      setTableNumber(''); // 結帳成功後清空桌號
+      
+      console.log('訂單已送出，請檢查 Google 試算表！');
+
+    } catch (error) {
+      console.error('送出失敗：', error);
+      alert('訂單送出失敗，請檢查網路連線或稍後再試');
+      setOrderStatus(null);
+    }
   };
 
   return (
@@ -209,21 +258,16 @@ const App = () => {
               key={item.id}
               className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden group hover:shadow-md transition-shadow"
             >
-              <div className="relative h-40 sm:h-48 overflow-hidden">
+              <div className="relative h-40 sm:h-48 overflow-hidden bg-white">
                 <img
                   src={item.image}
                   alt={item.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                   onError={(e) => {
                     e.currentTarget.src =
                       'https://images.unsplash.com/photo-1473093226795-af9932fe5856?auto=format&fit=crop&q=80&w=400';
                   }}
                 />
-                <div className="absolute top-3 right-3">
-                  <span className="bg-white/90 backdrop-blur px-2 py-1 rounded-lg text-xs font-bold text-slate-700 shadow-sm">
-                    {item.category}
-                  </span>
-                </div>
               </div>
               <div className="p-3 sm:p-4">
                 <div className="flex justify-between items-start mb-1 gap-2">
@@ -271,58 +315,100 @@ const App = () => {
 
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                 {cartItemCount === 0 ? (
-  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4">
-    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center">
-      <ShoppingBag className="w-10 h-10" />
-    </div>
-    <p className="font-medium">購物車是空的</p>
-  </div>
-) : (
-  <div className="space-y-4">
-    {cart.map((item) => (
-      <div
-        key={item.id}
-        className="flex items-center gap-4 rounded-2xl border border-slate-100 p-3"
-      >
-        <img
-          src={item.image}
-          alt={item.name}
-          className="w-16 h-16 rounded-xl object-cover border border-slate-100 shrink-0"
-        />
-        <div className="flex-1 min-w-0">
-          <h4 className="font-bold text-slate-800 truncate">{item.name}</h4>
-          <p className="text-slate-500 text-sm">${item.price}</p>
-        </div>
-        <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-1 px-2 shrink-0">
-          <button
-            onClick={() => updateQuantity(item.id, -1)}
-            className="p-1"
-          >
-            <Minus className="w-4 h-4" />
-          </button>
-          <span className="font-bold min-w-[20px] text-center">{item.quantity}</span>
-          <button
-            onClick={() => updateQuantity(item.id, 1)}
-            className="p-1"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-    ))}
-  </div>
-)}
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-4">
+                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center">
+                      <ShoppingBag className="w-10 h-10" />
+                    </div>
+                    <p className="font-medium">購物車是空的</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {cart.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-4 rounded-2xl border border-slate-100 p-3"
+                      >
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          className="w-16 h-16 rounded-xl object-cover border border-slate-100 shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-slate-800 truncate">{item.name}</h4>
+                          <p className="text-slate-500 text-sm">${item.price}</p>
+                        </div>
+                        <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-1 px-2 shrink-0">
+                          <button
+                            onClick={() => updateQuantity(item.id, -1)}
+                            className="p-1"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <span className="font-bold min-w-[20px] text-center">{item.quantity}</span>
+                          <button
+                            onClick={() => updateQuantity(item.id, 1)}
+                            className="p-1"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {cart.length > 0 && (
                 <div className="p-6 bg-slate-50 border-t border-slate-100 space-y-4">
-                  <div className="flex justify-between items-center text-slate-900 font-bold text-xl">
+                  
+                  {/* ====== 新增：內用/外帶切換按鈕 ====== */}
+                  <div className="flex gap-2 mb-2">
+                    <button
+                      onClick={() => setOrderType('外帶')}
+                      className={`flex-1 py-2.5 rounded-xl font-bold transition-all ${
+                        orderType === '外帶' 
+                          ? 'bg-slate-900 text-white shadow-md' 
+                          : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      外帶
+                    </button>
+                    <button
+                      onClick={() => setOrderType('內用')}
+                      className={`flex-1 py-2.5 rounded-xl font-bold transition-all ${
+                        orderType === '內用' 
+                          ? 'bg-slate-900 text-white shadow-md' 
+                          : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      內用
+                    </button>
+                  </div>
+
+                  {/* ====== 新增：只有選擇「內用」時，才會出現桌號輸入框 ====== */}
+                  {orderType === '內用' && (
+                    <div className="bg-slate-100 p-3 rounded-xl border border-slate-200">
+                      <label className="block text-sm font-bold text-slate-700 mb-1">
+                        請輸入桌號 <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={tableNumber}
+                        onChange={(e) => setTableNumber(e.target.value)}
+                        placeholder="例如：3"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                      />
+                    </div>
+                  )}
+                  {/* ================================== */}
+
+                  <div className="flex justify-between items-center text-slate-900 font-bold text-xl pt-2">
                     <span>總計</span>
                     <span className="text-amber-600">${totalAmount}</span>
                   </div>
                   <button
                     onClick={handleCheckout}
-                    className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold shadow-lg"
+                    className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-bold shadow-lg transition-colors"
                   >
                     確認下單
                   </button>
@@ -340,7 +426,7 @@ const App = () => {
             <h2 className="text-2xl font-bold">訂單已送出！</h2>
             <button
               onClick={() => setOrderStatus(null)}
-              className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold"
+              className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800"
             >
               太棒了
             </button>
