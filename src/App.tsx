@@ -4,9 +4,9 @@ import {
   Utensils, Clock, MapPin 
 } from 'lucide-react';
 
-// --- 1. Firebase 初始化 ---
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+// --- 1. Firebase 初始化 (Vercel 專用標準導入) ---
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB5vn8Y8iN9301Yzb7Vs0MVkxUYGiTcyCw",
@@ -21,8 +21,21 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// --- 2. 菜單資料 ---
-const MENU_DATA = [
+// --- 2. TypeScript 身分證 (解決 Error TS2339 等報錯) ---
+interface MenuItem {
+  id: number;
+  name: string;
+  category: string;
+  price: number;
+  description: string;
+  image: string;
+}
+
+interface CartItem extends MenuItem {
+  quantity: number;
+}
+
+const MENU_DATA: MenuItem[] = [
   { id: 1, name: '經典番茄肉醬麵', category: '紅醬', price: 180, description: '使用新鮮番茄與精選澳洲牛絞肉，慢火燉煮出的濃郁家鄉味。', image: '/22722_0.jpg' },
   { id: 2, name: '香辣茄汁海鮮麵', category: '紅醬', price: 260, description: '豐富的海鮮配料搭配微辣的茄汁，嗜辣者的首選。', image: '/22723_0.jpg' },
   { id: 3, name: '奶油培根蛋黃麵', category: '白醬', price: 200, description: '濃郁鮮奶油與帕馬森起司，伴隨酥脆培根，口感滑順。', image: '/22724_0.jpg' },
@@ -36,10 +49,11 @@ const MENU_DATA = [
 const CATEGORIES = ['全部', '紅醬', '白醬', '青醬', '清炒'];
 
 const App = () => {
-  const [cart, setCart] = useState([]);
+  // 指定 cart 的類型為 CartItem[]，解決 type 'never[]' 的報錯
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState('全部');
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [orderStatus, setOrderStatus] = useState(null);
+  const [orderStatus, setOrderStatus] = useState<string | null>(null);
   const [orderType, setOrderType] = useState('外帶');
   const [tableNumber, setTableNumber] = useState('');
   const [nickname, setNickname] = useState('');
@@ -50,7 +64,7 @@ const App = () => {
     return activeCategory === '全部' ? MENU_DATA : MENU_DATA.filter(item => item.category === activeCategory);
   }, [activeCategory]);
 
-  const addToCart = (item) => {
+  const addToCart = (item: MenuItem) => {
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
       if (existing) return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
@@ -58,7 +72,7 @@ const App = () => {
     });
   };
 
-  const updateQuantity = (id, delta) => {
+  const updateQuantity = (id: number, delta: number) => {
     setCart(prev => prev.map(item => item.id === id ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item).filter(item => item.quantity > 0));
   };
 
@@ -72,7 +86,6 @@ const App = () => {
 
     try {
       setOrderStatus('submitting');
-      
       const payload = {
         customerName: orderType === '內用' ? nickname : `手機末3碼:${phoneLast3}`,
         orderType,
@@ -84,34 +97,31 @@ const App = () => {
         timestamp: serverTimestamp()
       };
 
-      // 1. 存入 Firebase
+      // 1. Firebase 寫入
       await addDoc(collection(db, "orders"), payload);
 
-      // 2. 傳送到 Google Apps Script (這裡已經幫妳把引號加好了)
+      // 2. Google Apps Script 寫入
       await fetch('https://script.google.com/macros/s/AKfycbwlX4kQzLy5YD7IaDPVRIyw16C90OU1kIf0XwLL4Ua-rN6ppE3KfLfqhl7z3DuIbOtG-w/exec', {
-        method: 'POST', 
-        mode: 'no-cors', 
-        body: JSON.stringify(payload)
+        method: 'POST', mode: 'no-cors', body: JSON.stringify(payload)
       });
 
       setOrderStatus('success');
       setCart([]); setIsCartOpen(false);
     } catch (error) {
-      alert('下單失敗，請檢查連線！');
+      alert('下單失敗，請檢查網路連線！');
       setOrderStatus(null);
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* 頂部導航欄 */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Utensils className="text-amber-600 w-6 h-6" />
             <h1 className="text-xl font-bold tracking-tight">PASTA VITA</h1>
           </div>
-          <button onClick={() => setIsCartOpen(true)} className="flex items-center gap-2 p-2 px-4 hover:bg-amber-50 rounded-full group">
+          <button onClick={() => setIsCartOpen(true)} className="flex items-center gap-2 p-2 px-4 hover:bg-amber-50 rounded-full transition-all group">
             <div className="relative">
               <ShoppingBag className="w-6 h-6 text-slate-700 group-hover:text-amber-600" />
               {cartItemCount > 0 && (
@@ -124,7 +134,6 @@ const App = () => {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8">
-        {/* 店家資訊 */}
         <section className="mb-10">
           <h2 className="text-4xl font-extrabold text-slate-800 mb-4">新鮮手作義大利麵</h2>
           <div className="flex flex-wrap items-center gap-4 text-slate-500 font-medium">
@@ -137,14 +146,12 @@ const App = () => {
           </div>
         </section>
 
-        {/* 分類篩選 */}
         <div className="flex gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar">
           {CATEGORIES.map(cat => (
             <button key={cat} onClick={() => setActiveCategory(cat)} className={`px-6 py-2 rounded-full whitespace-nowrap text-sm font-bold transition-all ${activeCategory === cat ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>{cat}</button>
           ))}
         </div>
 
-        {/* 產品清單 - 採用 object-contain 確保圖上文字不被切掉 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
           {filteredMenu.map(item => (
             <div key={item.id} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden group hover:shadow-xl transition-all duration-300">
@@ -166,7 +173,6 @@ const App = () => {
         </div>
       </main>
 
-      {/* 購物車側欄 */}
       {isCartOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
@@ -175,7 +181,6 @@ const App = () => {
               <h2 className="text-2xl font-bold flex items-center gap-2"><ShoppingBag className="w-6 h-6 text-amber-600" /> 您的訂單</h2>
               <button onClick={() => setIsCartOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-6 h-6 text-slate-400" /></button>
             </div>
-            
             <div className="flex-1 overflow-y-auto space-y-4">
               {cart.map(item => (
                 <div key={item.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
@@ -187,16 +192,12 @@ const App = () => {
                   </div>
                 </div>
               ))}
-              {cart.length === 0 && <div className="text-center py-20 text-slate-400">購物車是空的</div>}
             </div>
-
-            {/* 下單區域 */}
             <div className="mt-6 pt-6 border-t border-slate-100 space-y-5">
               <div className="flex gap-2 p-1 bg-white border border-slate-200 rounded-2xl">
                 <button onClick={() => setOrderType('外帶')} className={`flex-1 py-3 rounded-xl font-bold transition-all ${orderType === '外帶' ? 'bg-[#00122e] text-white shadow-md' : 'text-slate-500'}`}>外帶</button>
                 <button onClick={() => setOrderType('內用')} className={`flex-1 py-3 rounded-xl font-bold transition-all ${orderType === '內用' ? 'bg-[#00122e] text-white shadow-md' : 'text-slate-500'}`}>內用</button>
               </div>
-              
               <div className="space-y-3">
                 {orderType === '內用' ? (
                   <>
@@ -207,7 +208,6 @@ const App = () => {
                   <input type="text" value={phoneLast3} onChange={e => setPhoneLast3(e.target.value)} placeholder="手機末 3 碼" maxLength={3} className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
                 )}
               </div>
-
               <div className="space-y-2">
                 <p className="text-sm font-bold text-slate-500 ml-1">付款方式</p>
                 <div className="flex gap-2">
@@ -216,17 +216,15 @@ const App = () => {
                   ))}
                 </div>
               </div>
-
               <div className="flex justify-between items-center text-2xl font-bold">
                 <span className="text-xl">總計</span><span className="text-[#d35400]">${totalAmount}</span>
               </div>
-              <button onClick={handleCheckout} className="w-full py-4 bg-[#d35400] text-white rounded-2xl font-black text-lg shadow-xl hover:bg-[#b34500] transition-all">確認下單</button>
+              <button onClick={handleCheckout} className="w-full py-4 bg-[#d35400] text-white rounded-2xl font-black text-lg shadow-xl hover:bg-[#b34500] transition-all active:scale-95">確認下單</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 成功彈窗 */}
       {orderStatus === 'success' && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-6">
           <div className="bg-white rounded-[40px] p-10 max-w-sm w-full text-center space-y-6 shadow-2xl">
