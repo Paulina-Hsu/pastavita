@@ -1,14 +1,27 @@
 import { useState, useMemo } from 'react';
-import {
-  ShoppingBag,
-  Plus,
-  Minus,
-  X,
-  CheckCircle2,
-  Utensils,
+import { 
+  ShoppingBag, Plus, Minus, X, CheckCircle2, 
+  Utensils, Clock, MapPin 
 } from 'lucide-react';
 
-// 菜單資料定義
+// --- 1. Firebase 初始化 ---
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB5vn8Y8iN9301Yzb7Vs0MVkxUYGiTcyCw",
+  authDomain: "pasta-vita.firebaseapp.com",
+  projectId: "pasta-vita",
+  storageBucket: "pasta-vita.firebasestorage.app",
+  messagingSenderId: "264724503629",
+  appId: "1:264724503629:web:ed6f4065d8563ec4e45004",
+  measurementId: "G-0JN9RL6RC5"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// --- 2. 菜單資料 ---
 const MENU_DATA = [
   { id: 1, name: '經典番茄肉醬麵', category: '紅醬', price: 180, description: '使用新鮮番茄與精選澳洲牛絞肉，慢火燉煮出的濃郁家鄉味。', image: '/22722_0.jpg' },
   { id: 2, name: '香辣茄汁海鮮麵', category: '紅醬', price: 260, description: '豐富的海鮮配料搭配微辣的茄汁，嗜辣者的首選。', image: '/22723_0.jpg' },
@@ -22,47 +35,31 @@ const MENU_DATA = [
 
 const CATEGORIES = ['全部', '紅醬', '白醬', '青醬', '清炒'];
 
-type MenuItem = { id: number; name: string; category: string; price: number; description: string; image: string; };
-type CartItem = MenuItem & { quantity: number; };
-type OrderStatus = 'submitting' | 'success' | null;
-type OrderType = '外帶' | '內用';
-type PaymentMethod = '現金' | '信用卡' | 'LINE PAY';
-
 const App = () => {
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState([]);
   const [activeCategory, setActiveCategory] = useState('全部');
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [orderStatus, setOrderStatus] = useState<OrderStatus>(null);
-  
-  const [orderType, setOrderType] = useState<OrderType>('外帶');
+  const [orderStatus, setOrderStatus] = useState(null);
+  const [orderType, setOrderType] = useState('外帶');
   const [tableNumber, setTableNumber] = useState('');
   const [nickname, setNickname] = useState('');
   const [phoneLast3, setPhoneLast3] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('現金');
+  const [paymentMethod, setPaymentMethod] = useState('現金');
 
   const filteredMenu = useMemo(() => {
-    return activeCategory === '全部'
-      ? MENU_DATA
-      : MENU_DATA.filter((item) => item.category === activeCategory);
+    return activeCategory === '全部' ? MENU_DATA : MENU_DATA.filter(item => item.category === activeCategory);
   }, [activeCategory]);
 
-  const addToCart = (item: MenuItem) => {
-    setCart((prev) => {
-      const existing = prev.find((i) => i.id === item.id);
-      if (existing) {
-        return prev.map((i) => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
-      }
+  const addToCart = (item) => {
+    setCart(prev => {
+      const existing = prev.find(i => i.id === item.id);
+      if (existing) return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
       return [...prev, { ...item, quantity: 1 }];
     });
   };
 
-  const updateQuantity = (id: number, delta: number) => {
-    setCart((prev) => prev.map((item) => {
-      if (item.id === id) {
-        return { ...item, quantity: Math.max(0, item.quantity + delta) };
-      }
-      return item;
-    }).filter((item) => item.quantity > 0));
+  const updateQuantity = (id, delta) => {
+    setCart(prev => prev.map(item => item.id === id ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item).filter(item => item.quantity > 0));
   };
 
   const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -70,95 +67,97 @@ const App = () => {
 
   const handleCheckout = async () => {
     if (cart.length === 0) return alert('請先選擇商品');
-
-    if (orderType === '內用') {
-      if (!nickname.trim()) return alert('請輸入您的暱稱喔！');
-      if (!tableNumber.trim()) return alert('請輸入桌號喔！');
-    } else {
-      if (!phoneLast3.trim()) return alert('請輸入手機末 3 碼以利取餐核對喔！');
-    }
+    if (orderType === '內用' && (!nickname || !tableNumber)) return alert('請填寫暱稱與桌號！');
+    if (orderType === '外帶' && !phoneLast3) return alert('請輸入手機末三碼！');
 
     try {
       setOrderStatus('submitting');
+      
       const payload = {
         customerName: orderType === '內用' ? nickname : `手機末3碼:${phoneLast3}`,
-        phone: '', 
-        orderType: orderType,
-        tableNumber: orderType === '內用' ? tableNumber : '',
-        paymentMethod: paymentMethod,
-        note: '',
-        items: cart,
+        orderType,
+        tableNumber: orderType === '內用' ? tableNumber : 'N/A',
+        paymentMethod,
+        items: cart.map(i => `${i.name} x ${i.quantity}`).join(', '),
         totalAmount,
+        status: "新訂單",
+        timestamp: serverTimestamp()
       };
 
-      await fetch(
-        'https://script.google.com/macros/s/AKfycbyGagsxQXBYsWPo12cyERBN72RhMk6Ca7YZCJVTJhNk4lYFjoRbLQMdjAXB2MSacfCTwA/exec',
-        {
-          method: 'POST',
-          mode: 'no-cors',
-          cache: 'no-cache',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload),
-        }
-      );
+      // 1. 存入 Firebase
+      await addDoc(collection(db, "orders"), payload);
+
+      // 2. 傳送到 Google Apps Script (這裡已經幫妳把引號加好了)
+      await fetch('https://script.google.com/macros/s/AKfycbwlX4kQzLy5YD7IaDPVRIyw16C90OU1kIf0XwLL4Ua-rN6ppE3KfLfqhl7z3DuIbOtG-w/exec', {
+        method: 'POST', 
+        mode: 'no-cors', 
+        body: JSON.stringify(payload)
+      });
 
       setOrderStatus('success');
-      setCart([]);
-      setNickname('');
-      setPhoneLast3('');
-      setTableNumber('');
-      setPaymentMethod('現金');
+      setCart([]); setIsCartOpen(false);
     } catch (error) {
-      console.error('送出失敗：', error);
-      alert('訂單送出失敗，請檢查網路');
+      alert('下單失敗，請檢查連線！');
       setOrderStatus(null);
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      {/* 頂部導航欄 */}
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Utensils className="text-amber-600 w-6 h-6" />
             <h1 className="text-xl font-bold tracking-tight">PASTA VITA</h1>
           </div>
-          <button onClick={() => setIsCartOpen(true)} className="flex items-center gap-2 p-2 px-3 hover:bg-slate-100 rounded-full transition-colors">
+          <button onClick={() => setIsCartOpen(true)} className="flex items-center gap-2 p-2 px-4 hover:bg-amber-50 rounded-full group">
             <div className="relative">
-              <ShoppingBag className="w-6 h-6 text-slate-700" />
+              <ShoppingBag className="w-6 h-6 text-slate-700 group-hover:text-amber-600" />
               {cartItemCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-amber-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">
-                  {cartItemCount}
-                </span>
+                <span className="absolute -top-2 -right-2 bg-amber-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white shadow-sm">{cartItemCount}</span>
               )}
             </div>
-            <span className="text-sm font-bold text-slate-700">購物車</span>
+            <span className="font-bold text-slate-700 group-hover:text-amber-600">購物車</span>
           </button>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-3 sm:px-4 py-6 sm:py-8">
-        <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar mb-8">
-          {CATEGORIES.map((cat) => (
-            <button key={cat} onClick={() => setActiveCategory(cat)} className={`px-6 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${activeCategory === cat ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>
-              {cat}
-            </button>
+      <main className="max-w-6xl mx-auto px-4 py-8">
+        {/* 店家資訊 */}
+        <section className="mb-10">
+          <h2 className="text-4xl font-extrabold text-slate-800 mb-4">新鮮手作義大利麵</h2>
+          <div className="flex flex-wrap items-center gap-4 text-slate-500 font-medium">
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-100">
+              <Clock className="w-4 h-4 text-amber-500" />預計取餐：20-30 分鐘
+            </div>
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-100">
+              <MapPin className="w-4 h-4 text-amber-500" />台北市大安區忠孝東路
+            </div>
+          </div>
+        </section>
+
+        {/* 分類篩選 */}
+        <div className="flex gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar">
+          {CATEGORIES.map(cat => (
+            <button key={cat} onClick={() => setActiveCategory(cat)} className={`px-6 py-2 rounded-full whitespace-nowrap text-sm font-bold transition-all ${activeCategory === cat ? 'bg-slate-900 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>{cat}</button>
           ))}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-          {filteredMenu.map((item) => (
-            <div key={item.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden group hover:shadow-md">
-              <div className="relative h-48 bg-white overflow-hidden">
-                <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500" />
+        {/* 產品清單 - 採用 object-contain 確保圖上文字不被切掉 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+          {filteredMenu.map(item => (
+            <div key={item.id} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden group hover:shadow-xl transition-all duration-300">
+              <div className="relative h-52 bg-slate-100 flex items-center justify-center p-2 rounded-t-3xl">
+                <img src={item.image} alt={item.name} className="w-full h-full object-contain object-center transition-transform duration-500" />
               </div>
-              <div className="p-4">
-                <div className="flex justify-between items-start mb-1 gap-2">
+              <div className="p-6">
+                <div className="flex justify-between items-start mb-2">
                   <h3 className="font-bold text-lg text-slate-800">{item.name}</h3>
                   <span className="text-amber-600 font-bold">${item.price}</span>
                 </div>
-                <p className="text-slate-500 text-sm mb-4 line-clamp-2 h-10">{item.description}</p>
-                <button onClick={() => addToCart(item)} className="w-full py-2 bg-slate-50 hover:bg-amber-600 hover:text-white text-slate-700 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-slate-200">
+                <p className="text-slate-500 text-xs mb-5 line-clamp-3 leading-relaxed">{item.description}</p>
+                <button onClick={() => addToCart(item)} className="w-full py-3 bg-slate-50 hover:bg-amber-600 hover:text-white text-slate-700 font-bold rounded-2xl transition-all flex items-center justify-center gap-2 border border-slate-100">
                   <Plus className="w-4 h-4" /> 加入購物車
                 </button>
               </div>
@@ -167,75 +166,73 @@ const App = () => {
         </div>
       </main>
 
+      {/* 購物車側欄 */}
       {isCartOpen && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
-          <div className="absolute inset-y-0 right-0 w-full sm:max-w-md bg-white shadow-2xl flex flex-col">
-            <div className="px-6 py-4 border-b flex justify-between items-center">
-              <h2 className="text-xl font-bold flex items-center gap-2"><ShoppingBag className="w-5 h-5" /> 您的訂單</h2>
+          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col p-6 animate-in slide-in-from-right">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold flex items-center gap-2"><ShoppingBag className="w-6 h-6 text-amber-600" /> 您的訂單</h2>
               <button onClick={() => setIsCartOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-6 h-6 text-slate-400" /></button>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {cart.map((item) => (
-                <div key={item.id} className="flex items-center gap-4 rounded-2xl border p-3">
-                  <img src={item.image} className="w-16 h-16 rounded-xl object-cover" />
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-slate-800 truncate">{item.name}</h4>
-                    <p className="text-slate-500 text-sm">${item.price}</p>
-                  </div>
-                  <div className="flex items-center gap-2 bg-slate-50 rounded-lg p-1 px-2">
-                    <button onClick={() => updateQuantity(item.id, -1)} className="p-1"><Minus className="w-4 h-4" /></button>
-                    <span className="font-bold min-w-[20px] text-center">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, 1)} className="p-1"><Plus className="w-4 h-4" /></button>
+            
+            <div className="flex-1 overflow-y-auto space-y-4">
+              {cart.map(item => (
+                <div key={item.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex-1 font-bold text-slate-800">{item.name}</div>
+                  <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-lg">
+                    <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-amber-600"><Minus className="w-4 h-4" /></button>
+                    <span className="font-bold">{item.quantity}</span>
+                    <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-amber-600"><Plus className="w-4 h-4" /></button>
                   </div>
                 </div>
               ))}
+              {cart.length === 0 && <div className="text-center py-20 text-slate-400">購物車是空的</div>}
             </div>
 
-            {cart.length > 0 && (
-              <div className="p-6 bg-slate-50 border-t space-y-4">
-                <div className="flex gap-2">
-                  <button onClick={() => setOrderType('外帶')} className={`flex-1 py-2.5 rounded-xl font-bold ${orderType === '外帶' ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-500 border'}`}>外帶</button>
-                  <button onClick={() => setOrderType('內用')} className={`flex-1 py-2.5 rounded-xl font-bold ${orderType === '內用' ? 'bg-slate-900 text-white shadow-md' : 'bg-white text-slate-500 border'}`}>內用</button>
-                </div>
-
-                <div className="space-y-3">
-                  {orderType === '內用' ? (
-                    <>
-                      <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="請輸入您的暱稱 (例如: 王小姐)" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-amber-500 outline-none" />
-                      <input type="text" value={tableNumber} onChange={(e) => setTableNumber(e.target.value)} placeholder="請輸入桌號" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-amber-500 outline-none" />
-                    </>
-                  ) : (
-                    <input type="text" value={phoneLast3} onChange={(e) => setPhoneLast3(e.target.value)} placeholder="請輸入手機末 3 碼" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-amber-500 outline-none" maxLength={3} />
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">付款方式</label>
-                  <div className="flex gap-2">
-                    {(['現金', '信用卡', 'LINE PAY'] as PaymentMethod[]).map((method) => (
-                      <button key={method} onClick={() => setPaymentMethod(method)} className={`flex-1 py-2 rounded-xl text-xs font-bold ${paymentMethod === method ? 'bg-amber-600 text-white shadow-md' : 'bg-white text-slate-500 border'}`}>{method}</button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center text-slate-900 font-bold text-xl pt-2">
-                  <span>總計</span><span className="text-amber-600">${totalAmount}</span>
-                </div>
-                <button onClick={handleCheckout} className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold shadow-lg">確認下單</button>
+            {/* 下單區域 */}
+            <div className="mt-6 pt-6 border-t border-slate-100 space-y-5">
+              <div className="flex gap-2 p-1 bg-white border border-slate-200 rounded-2xl">
+                <button onClick={() => setOrderType('外帶')} className={`flex-1 py-3 rounded-xl font-bold transition-all ${orderType === '外帶' ? 'bg-[#00122e] text-white shadow-md' : 'text-slate-500'}`}>外帶</button>
+                <button onClick={() => setOrderType('內用')} className={`flex-1 py-3 rounded-xl font-bold transition-all ${orderType === '內用' ? 'bg-[#00122e] text-white shadow-md' : 'text-slate-500'}`}>內用</button>
               </div>
-            )}
+              
+              <div className="space-y-3">
+                {orderType === '內用' ? (
+                  <>
+                    <input type="text" value={nickname} onChange={e => setNickname(e.target.value)} placeholder="您的暱稱" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
+                    <input type="text" value={tableNumber} onChange={e => setTableNumber(e.target.value)} placeholder="桌號" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
+                  </>
+                ) : (
+                  <input type="text" value={phoneLast3} onChange={e => setPhoneLast3(e.target.value)} placeholder="手機末 3 碼" maxLength={3} className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-bold text-slate-500 ml-1">付款方式</p>
+                <div className="flex gap-2">
+                  {['現金', '信用卡', 'LINE PAY'].map((method) => (
+                    <button key={method} onClick={() => setPaymentMethod(method)} className={`flex-1 py-2 text-sm rounded-full border transition-all font-bold ${paymentMethod === method ? 'bg-[#d35400] text-white border-[#d35400]' : 'bg-white text-slate-400 border-slate-200'}`}>{method}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center text-2xl font-bold">
+                <span className="text-xl">總計</span><span className="text-[#d35400]">${totalAmount}</span>
+              </div>
+              <button onClick={handleCheckout} className="w-full py-4 bg-[#d35400] text-white rounded-2xl font-black text-lg shadow-xl hover:bg-[#b34500] transition-all">確認下單</button>
+            </div>
           </div>
         </div>
       )}
 
+      {/* 成功彈窗 */}
       {orderStatus === 'success' && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center space-y-4 shadow-2xl">
-            <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto" />
-            <h2 className="text-2xl font-bold">訂單已送出！</h2>
-            <button onClick={() => setOrderStatus(null)} className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold">太棒了</button>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-6">
+          <div className="bg-white rounded-[40px] p-10 max-w-sm w-full text-center space-y-6 shadow-2xl">
+            <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto" />
+            <h2 className="text-3xl font-black text-slate-800">訂單已送出！</h2>
+            <button onClick={() => setOrderStatus(null)} className="w-full py-4 bg-[#00122e] text-white rounded-2xl font-bold">太棒了</button>
           </div>
         </div>
       )}
