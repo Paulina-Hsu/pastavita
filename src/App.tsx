@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
 import { 
   ShoppingBag, Plus, Minus, X, CheckCircle2, 
-  Utensils, Clock, MapPin 
+  Utensils, Clock, MapPin, Loader2 // 增加了載入圖示
 } from 'lucide-react';
 
-// --- 1. Firebase 初始化 (Vercel 專用標準導入) ---
+// --- 1. Firebase 初始化 ---
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, serverTimestamp } from "firebase/firestore";
 
@@ -21,7 +21,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// --- 2. TypeScript 身分證 (解決 Error TS2339 等報錯) ---
+// --- 2. TypeScript 身分證 ---
 interface MenuItem {
   id: number;
   name: string;
@@ -49,7 +49,6 @@ const MENU_DATA: MenuItem[] = [
 const CATEGORIES = ['全部', '紅醬', '白醬', '青醬', '清炒'];
 
 const App = () => {
-  // 指定 cart 的類型為 CartItem[]，解決 type 'never[]' 的報錯
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState('全部');
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -79,13 +78,16 @@ const App = () => {
   const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
+  // --- 🚀 重點：優化後的下單邏輯 ---
   const handleCheckout = async () => {
-    if (cart.length === 0) return alert('請先選擇商品');
+    // 1. 基本檢查
+    if (cart.length === 0 || orderStatus === 'submitting') return; // 如果正在傳送中，直接擋掉，不准重複跑
     if (orderType === '內用' && (!nickname || !tableNumber)) return alert('請填寫暱稱與桌號！');
     if (orderType === '外帶' && !phoneLast3) return alert('請輸入手機末三碼！');
 
     try {
-      setOrderStatus('submitting');
+      setOrderStatus('submitting'); // 第一時間立刻鎖死按鈕
+      
       const payload = {
         customerName: orderType === '內用' ? nickname : `手機末3碼:${phoneLast3}`,
         orderType,
@@ -97,17 +99,22 @@ const App = () => {
         timestamp: serverTimestamp()
       };
 
-      // 1. Firebase 寫入
+      // 2. 先完成 Firebase 寫入 (通常小於 1 秒)
       await addDoc(collection(db, "orders"), payload);
 
-      // 2. Google Apps Script 寫入
-      await fetch('https://script.google.com/macros/s/AKfycbwlX4kQzLy5YD7IaDPVRIyw16C90OU1kIf0XwLL4Ua-rN6ppE3KfLfqhl7z3DuIbOtG-w/exec', {
+      // 3. 呼叫 Google Apps Script (不使用 await，讓它在背景慢慢跑)
+      fetch('https://script.google.com/macros/s/AKfycbwlX4kQzLy5YD7IaDPVRIyw16C90OU1kIf0XwLL4Ua-rN6ppE3KfLfqhl7z3DuIbOtG-w/exec', {
         method: 'POST', mode: 'no-cors', body: JSON.stringify(payload)
       });
 
+      // 4. 立刻跳出成功視窗，不需要等 GAS 回傳
       setOrderStatus('success');
-      setCart([]); setIsCartOpen(false);
+      setCart([]); 
+      setIsCartOpen(false);
+      setNickname(''); setTableNumber(''); setPhoneLast3(''); // 清空表格
+      
     } catch (error) {
+      console.error("下單錯誤:", error);
       alert('下單失敗，請檢查網路連線！');
       setOrderStatus(null);
     }
@@ -121,7 +128,7 @@ const App = () => {
             <Utensils className="text-amber-600 w-6 h-6" />
             <h1 className="text-xl font-bold tracking-tight">PASTA VITA</h1>
           </div>
-          <button onClick={() => setIsCartOpen(true)} className="flex items-center gap-2 p-2 px-4 hover:bg-amber-50 rounded-full transition-all group">
+          <button onClick={() => setIsCartOpen(true)} className="flex items-center gap-2 p-2 px-4 hover:bg-amber-50 rounded-full group">
             <div className="relative">
               <ShoppingBag className="w-6 h-6 text-slate-700 group-hover:text-amber-600" />
               {cartItemCount > 0 && (
@@ -173,53 +180,67 @@ const App = () => {
         </div>
       </main>
 
+      {/* 購物車側欄 */}
       {isCartOpen && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsCartOpen(false)} />
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => (orderStatus !== 'submitting' && setIsCartOpen(false))} />
           <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col p-6 animate-in slide-in-from-right">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold flex items-center gap-2"><ShoppingBag className="w-6 h-6 text-amber-600" /> 您的訂單</h2>
-              <button onClick={() => setIsCartOpen(false)} className="p-2 hover:bg-slate-100 rounded-full"><X className="w-6 h-6 text-slate-400" /></button>
+              <button disabled={orderStatus === 'submitting'} onClick={() => setIsCartOpen(false)} className="p-2 hover:bg-slate-100 rounded-full disabled:opacity-30"><X className="w-6 h-6 text-slate-400" /></button>
             </div>
             <div className="flex-1 overflow-y-auto space-y-4">
               {cart.map(item => (
                 <div key={item.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="flex-1 font-bold text-slate-800">{item.name}</div>
                   <div className="flex items-center gap-3 bg-white px-2 py-1 rounded-lg">
-                    <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-amber-600"><Minus className="w-4 h-4" /></button>
+                    <button disabled={orderStatus === 'submitting'} onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:text-amber-600"><Minus className="w-4 h-4" /></button>
                     <span className="font-bold">{item.quantity}</span>
-                    <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-amber-600"><Plus className="w-4 h-4" /></button>
+                    <button disabled={orderStatus === 'submitting'} onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:text-amber-600"><Plus className="w-4 h-4" /></button>
                   </div>
                 </div>
               ))}
             </div>
             <div className="mt-6 pt-6 border-t border-slate-100 space-y-5">
               <div className="flex gap-2 p-1 bg-white border border-slate-200 rounded-2xl">
-                <button onClick={() => setOrderType('外帶')} className={`flex-1 py-3 rounded-xl font-bold transition-all ${orderType === '外帶' ? 'bg-[#00122e] text-white shadow-md' : 'text-slate-500'}`}>外帶</button>
-                <button onClick={() => setOrderType('內用')} className={`flex-1 py-3 rounded-xl font-bold transition-all ${orderType === '內用' ? 'bg-[#00122e] text-white shadow-md' : 'text-slate-500'}`}>內用</button>
+                <button disabled={orderStatus === 'submitting'} onClick={() => setOrderType('外帶')} className={`flex-1 py-3 rounded-xl font-bold transition-all ${orderType === '外帶' ? 'bg-[#00122e] text-white shadow-md' : 'text-slate-500'}`}>外帶</button>
+                <button disabled={orderStatus === 'submitting'} onClick={() => setOrderType('內用')} className={`flex-1 py-3 rounded-xl font-bold transition-all ${orderType === '內用' ? 'bg-[#00122e] text-white shadow-md' : 'text-slate-500'}`}>內用</button>
               </div>
               <div className="space-y-3">
                 {orderType === '內用' ? (
                   <>
-                    <input type="text" value={nickname} onChange={e => setNickname(e.target.value)} placeholder="您的暱稱" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
-                    <input type="text" value={tableNumber} onChange={e => setTableNumber(e.target.value)} placeholder="桌號" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
+                    <input disabled={orderStatus === 'submitting'} type="text" value={nickname} onChange={e => setNickname(e.target.value)} placeholder="您的暱稱" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
+                    <input disabled={orderStatus === 'submitting'} type="text" value={tableNumber} onChange={e => setTableNumber(e.target.value)} placeholder="桌號" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
                   </>
                 ) : (
-                  <input type="text" value={phoneLast3} onChange={e => setPhoneLast3(e.target.value)} placeholder="手機末 3 碼" maxLength={3} className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
+                  <input disabled={orderStatus === 'submitting'} type="text" value={phoneLast3} onChange={e => setPhoneLast3(e.target.value)} placeholder="手機末 3 碼" maxLength={3} className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" />
                 )}
               </div>
               <div className="space-y-2">
                 <p className="text-sm font-bold text-slate-500 ml-1">付款方式</p>
                 <div className="flex gap-2">
                   {['現金', '信用卡', 'LINE PAY'].map((method) => (
-                    <button key={method} onClick={() => setPaymentMethod(method)} className={`flex-1 py-2 text-sm rounded-full border transition-all font-bold ${paymentMethod === method ? 'bg-[#d35400] text-white border-[#d35400]' : 'bg-white text-slate-400 border-slate-200'}`}>{method}</button>
+                    <button key={method} disabled={orderStatus === 'submitting'} onClick={() => setPaymentMethod(method)} className={`flex-1 py-2 text-sm rounded-full border transition-all font-bold ${paymentMethod === method ? 'bg-[#d35400] text-white border-[#d35400]' : 'bg-white text-slate-400 border-slate-200'}`}>{method}</button>
                   ))}
                 </div>
               </div>
               <div className="flex justify-between items-center text-2xl font-bold">
                 <span className="text-xl">總計</span><span className="text-[#d35400]">${totalAmount}</span>
               </div>
-              <button onClick={handleCheckout} className="w-full py-4 bg-[#d35400] text-white rounded-2xl font-black text-lg shadow-xl hover:bg-[#b34500] transition-all active:scale-95">確認下單</button>
+
+              {/* 優化後的按鈕：正在傳送時會變灰色並顯示轉圈圈 */}
+              <button 
+                onClick={handleCheckout} 
+                disabled={orderStatus === 'submitting' || cart.length === 0}
+                className={`w-full py-4 text-white rounded-2xl font-black text-lg shadow-xl flex items-center justify-center gap-3 transition-all ${orderStatus === 'submitting' ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#d35400] hover:bg-[#b34500]'}`}
+              >
+                {orderStatus === 'submitting' ? (
+                  <>
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    正在處理訂單...
+                  </>
+                ) : '確認下單'}
+              </button>
             </div>
           </div>
         </div>
@@ -227,9 +248,10 @@ const App = () => {
 
       {orderStatus === 'success' && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-6">
-          <div className="bg-white rounded-[40px] p-10 max-w-sm w-full text-center space-y-6 shadow-2xl">
+          <div className="bg-white rounded-[40px] p-10 max-w-sm w-full text-center space-y-6 shadow-2xl animate-in zoom-in">
             <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto" />
             <h2 className="text-3xl font-black text-slate-800">訂單已送出！</h2>
+            <p className="text-slate-500 font-medium">我們已收到您的美味點餐，請稍候片刻。</p>
             <button onClick={() => setOrderStatus(null)} className="w-full py-4 bg-[#00122e] text-white rounded-2xl font-bold">太棒了</button>
           </div>
         </div>
